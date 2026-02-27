@@ -31,22 +31,39 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [prefetchedQuestion, setPrefetchedQuestion] = useState<Question | null>(null);
   const [isPrefetching, setIsPrefetching] = useState(false);
+  
+  // API Key Management
+  const [apiKey, setApiKey] = useState<string>("");
+  const [showKeySetup, setShowKeySetup] = useState(false);
+  const [tempKey, setTempKey] = useState("");
 
   // Initial load
   useEffect(() => {
-    loadInitialQuestions();
+    const savedKey = localStorage.getItem('TOEFL_JUNIOR_API_KEY');
+    const envKey = process.env.GEMINI_API_KEY;
+    
+    if (envKey && envKey !== "MY_GEMINI_API_KEY" && envKey !== "") {
+      setApiKey(envKey);
+      loadInitialQuestions(envKey);
+    } else if (savedKey) {
+      setApiKey(savedKey);
+      loadInitialQuestions(savedKey);
+    } else {
+      setShowKeySetup(true);
+      setIsLoading(false);
+    }
   }, []);
 
-  // Prefetch logic: when current question is answered, start fetching the next one if not already fetching
+  // Prefetch logic
   useEffect(() => {
-    if (showExplanation && !prefetchedQuestion && !isPrefetching) {
-      prefetchNext();
+    if (showExplanation && !prefetchedQuestion && !isPrefetching && apiKey) {
+      prefetchNext(apiKey);
     }
-  }, [showExplanation, prefetchedQuestion, isPrefetching]);
+  }, [showExplanation, prefetchedQuestion, isPrefetching, apiKey]);
 
-  const loadInitialQuestions = async () => {
+  const loadInitialQuestions = async (keyToUse: string) => {
     setIsLoading(true);
-    const first = await generateGrammarQuestion();
+    const first = await generateGrammarQuestion(keyToUse);
     if (first) {
       setQuestions([first]);
       setCurrentQuestionIndex(0);
@@ -56,19 +73,33 @@ export default function App() {
       
       // Start prefetching the second one immediately
       setIsPrefetching(true);
-      const second = await generateGrammarQuestion([first.category]);
+      const second = await generateGrammarQuestion(keyToUse, [first.category]);
       setPrefetchedQuestion(second);
       setIsPrefetching(false);
+    } else {
+      // If generation fails, maybe the key is invalid
+      if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === "") {
+        setShowKeySetup(true);
+      }
     }
     setIsLoading(false);
   };
 
-  const prefetchNext = async () => {
+  const prefetchNext = async (keyToUse: string) => {
     setIsPrefetching(true);
     const excludeTopics = questions.map(q => q.category).slice(-5);
-    const next = await generateGrammarQuestion(excludeTopics);
+    const next = await generateGrammarQuestion(keyToUse, excludeTopics);
     setPrefetchedQuestion(next);
     setIsPrefetching(false);
+  };
+
+  const handleSaveKey = () => {
+    if (tempKey.trim()) {
+      localStorage.setItem('TOEFL_JUNIOR_API_KEY', tempKey.trim());
+      setApiKey(tempKey.trim());
+      setShowKeySetup(false);
+      loadInitialQuestions(tempKey.trim());
+    }
   };
 
   const handleSelectAnswer = (option: string) => {
@@ -93,12 +124,12 @@ export default function App() {
       setCurrentQuestionIndex(prev => prev + 1);
       setSelectedAnswer(null);
       setShowExplanation(false);
-      setPrefetchedQuestion(null); // Clear prefetch so the effect triggers a new one
+      setPrefetchedQuestion(null);
     } else {
-      // Fallback if user is too fast
+      // Fallback
       setIsPrefetching(true);
       const excludeTopics = questions.map(q => q.category).slice(-5);
-      const next = await generateGrammarQuestion(excludeTopics);
+      const next = await generateGrammarQuestion(apiKey, excludeTopics);
       if (next) {
         setQuestions(prev => [...prev, next]);
         setCurrentQuestionIndex(prev => prev + 1);
@@ -110,6 +141,50 @@ export default function App() {
   };
 
   const currentQuestion = questions[currentQuestionIndex];
+
+  if (showKeySetup) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full border border-slate-100"
+        >
+          <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-indigo-200">
+            <Sparkles className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">配置 API Key</h2>
+          <p className="text-slate-500 mb-8 leading-relaxed">
+            为了在 Vercel 或本地运行此应用，您需要提供一个 Google Gemini API Key。
+            您可以从 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-indigo-600 font-bold hover:underline">Google AI Studio</a> 免费获取。
+          </p>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 block">API Key</label>
+              <input 
+                type="password"
+                value={tempKey}
+                onChange={(e) => setTempKey(e.target.value)}
+                placeholder="粘贴您的 API Key (AIza...)"
+                className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-xl focus:border-indigo-600 focus:bg-white outline-none transition-all font-mono text-sm"
+              />
+            </div>
+            <button 
+              onClick={handleSaveKey}
+              disabled={!tempKey.trim()}
+              className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50"
+            >
+              保存并开始练习
+            </button>
+            <p className="text-[10px] text-center text-slate-400 italic">
+              您的 Key 将仅保存在本地浏览器中，不会上传到任何服务器。
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (

@@ -1,11 +1,24 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { Question } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+export async function generateGrammarQuestion(apiKey?: string, excludeTopics: string[] = []): Promise<Question | null> {
+  const key = apiKey || process.env.GEMINI_API_KEY;
+  
+  // 检查是否是有效的 Key（排除占位符）
+  if (!key || key === "MY_GEMINI_API_KEY" || key.trim() === "") {
+    console.error("No valid API Key provided");
+    return null;
+  }
 
-export async function generateGrammarQuestion(excludeTopics: string[] = []): Promise<Question | null> {
   try {
-    const response = await ai.models.generateContent({
+    const ai = new GoogleGenAI({ apiKey: key });
+    
+    // 使用 Promise.race 实现超时控制
+    const timeoutPromise = new Promise<null>((_, reject) => 
+      setTimeout(() => reject(new Error("Timeout")), 15000)
+    );
+
+    const fetchPromise = ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: `Generate a high-difficulty TOEFL Junior "Language Form & Meaning" question. 
       The question should be a sentence with one blank (indicated by "______").
@@ -15,6 +28,7 @@ export async function generateGrammarQuestion(excludeTopics: string[] = []): Pro
       
       IMPORTANT: The "explanation" fields (rule, example, commonError) MUST be written in Chinese (简体中文).`,
       config: {
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }, // 降低思考等级以提升速度
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -41,6 +55,10 @@ export async function generateGrammarQuestion(excludeTopics: string[] = []): Pro
         }
       }
     });
+
+    const response = await Promise.race([fetchPromise, timeoutPromise]) as any;
+    
+    if (!response) return null;
 
     const text = response.text;
     if (!text) return null;
