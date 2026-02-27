@@ -126,6 +126,27 @@ export default function App() {
     );
   }
 
+  if (!currentQuestion) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center justify-center p-4 text-center">
+        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 max-w-md">
+          <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-slate-800 mb-2">加载失败</h2>
+          <p className="text-slate-500 mb-6">
+            无法获取题目。这通常是因为缺少 <strong>GEMINI_API_KEY</strong> 环境变量或 API 调用达到了限制。
+          </p>
+          <button 
+            onClick={loadInitialQuestions}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+          >
+            <RefreshCcw className="w-5 h-5" />
+            重试
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-slate-900 font-sans selection:bg-indigo-100">
       {/* Header */}
